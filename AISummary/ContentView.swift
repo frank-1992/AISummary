@@ -144,7 +144,7 @@ struct EditView: View {
                 .background(Color(NSColor.textBackgroundColor))
             
             ScrollView(.horizontal) {
-                HStack {
+                HStack(spacing: 10) {
                     ForEach(log.imageData.indices, id: \ .self) { imgIndex in
                         if let image = NSImage(data: log.imageData[imgIndex]) {
                             ZStack(alignment: .top) {
@@ -165,6 +165,11 @@ struct EditView: View {
                         }
                     }
                 }
+                .padding(.horizontal, 10)
+            }
+            
+            Button("添加图片") {
+                selectImages()
             }
             
             HStack {
@@ -181,7 +186,19 @@ struct EditView: View {
         .frame(width: 400, height: 400)
         .background(Color(NSColor.windowBackgroundColor))
     }
+    
+    func selectImages() {
+        let openPanel = NSOpenPanel()
+        openPanel.allowedContentTypes = [.image]
+        openPanel.allowsMultipleSelection = true
+        if openPanel.runModal() == .OK {
+            let newImages = openPanel.urls.compactMap { NSImage(contentsOf: $0)?.tiffRepresentation }
+            log.imageData.append(contentsOf: newImages)
+        }
+    }
 }
+
+
 
 struct WorkLog: Identifiable, Codable {
     let id = UUID()
