@@ -135,8 +135,6 @@ struct EditView: View {
     @Binding var isEditing: Bool
     var onSave: () -> Void
     
-    @State private var selectedImages: [NSImage] = []
-    
     var body: some View {
         VStack {
             TextEditor(text: $log.content)
@@ -147,22 +145,30 @@ struct EditView: View {
             
             ScrollView(.horizontal) {
                 HStack {
-                    ForEach(selectedImages, id: \ .self) { image in
-                        Image(nsImage: image)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(height: 100)
+                    ForEach(log.imageData.indices, id: \ .self) { imgIndex in
+                        if let image = NSImage(data: log.imageData[imgIndex]) {
+                            ZStack(alignment: .top) {
+                                Image(nsImage: image)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(height: 100)
+                                
+                                Button(action: {
+                                    log.imageData.remove(at: imgIndex)
+                                }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.red)
+                                        .background(Color.white)
+                                        .clipShape(Circle())
+                                }
+                            }
+                        }
                     }
                 }
             }
             
-            Button("选择图片") {
-                selectImages()
-            }
-            
             HStack {
                 Button("保存") {
-                    log.imageData = selectedImages.compactMap { $0.tiffRepresentation }
                     onSave()
                     isEditing = false
                 }
@@ -174,18 +180,6 @@ struct EditView: View {
         }
         .frame(width: 400, height: 400)
         .background(Color(NSColor.windowBackgroundColor))
-        .onAppear {
-            selectedImages = log.imageData.compactMap { NSImage(data: $0) }
-        }
-    }
-    
-    func selectImages() {
-        let openPanel = NSOpenPanel()
-        openPanel.allowedContentTypes = [.image]
-        openPanel.allowsMultipleSelection = true
-        if openPanel.runModal() == .OK {
-            selectedImages = openPanel.urls.compactMap { NSImage(contentsOf: $0) }
-        }
     }
 }
 
