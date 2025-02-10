@@ -245,7 +245,11 @@ class ImagePreviewWindowController: NSWindowController {
             defer: false
         )
         window.contentViewController = hostingView
-        window.center()
+        if let mainWindow = NSApp.mainWindow {
+            window.setFrameOrigin(NSPoint(x: mainWindow.frame.midX - window.frame.width / 2,
+                                          y: mainWindow.frame.midY - window.frame.height / 2))
+        }
+        window.level = .normal
         super.init(window: window)
     }
 
