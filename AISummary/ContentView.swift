@@ -9,6 +9,11 @@ import SwiftUI
 import Foundation
 import AppKit
 
+//class ImagePreviewModel: ObservableObject {
+//    @Published var previewImage: NSImage?
+//    @Published var isPreviewing: Bool = false
+//}
+
 struct ContentView: View {
     @State private var workLogs: [WorkLog] = WorkLogStorage.load()
     @State private var isGeneratingReport = false
@@ -26,16 +31,20 @@ struct ContentView: View {
                             Text(workLogs[index].content)
                             
                             ScrollView(.horizontal) {
-                                HStack {
-                                    ForEach(workLogs[index].imageData, id: \ .self) { imageData in
-                                        if let image = NSImage(data: imageData) {
+                                HStack(spacing: 10) {
+                                    ForEach(workLogs[index].imageData.indices, id: \ .self) { imgIndex in
+                                        if let image = NSImage(data: workLogs[index].imageData[imgIndex]) {
                                             Image(nsImage: image)
                                                 .resizable()
                                                 .scaledToFit()
                                                 .frame(height: 100)
+                                                .onTapGesture {
+                                                    showImagePreview(image: image)
+                                                }
                                         }
                                     }
                                 }
+                                .padding(.horizontal, 10)
                             }
                         }
                         .padding()
@@ -80,7 +89,6 @@ struct ContentView: View {
                 }
             }
         }
-    
     func addNewLog() {
         let newLog = WorkLog(date: Date(), content: "今天的工作内容", imageData: [])
         DispatchQueue.global(qos: .background).async {
@@ -130,6 +138,11 @@ struct ContentView: View {
     }
 }
 
+func showImagePreview(image: NSImage) {
+    let previewWindow = ImagePreviewWindowController(image: image)
+    previewWindow.showWindow(nil)
+}
+
 struct EditView: View {
     @Binding var log: WorkLog
     @Binding var isEditing: Bool
@@ -152,6 +165,9 @@ struct EditView: View {
                                     .resizable()
                                     .scaledToFit()
                                     .frame(height: 100)
+                                    .onTapGesture {
+                                        showImagePreview(image: image)
+                                    }
                                 
                                 Button(action: {
                                     log.imageData.remove(at: imgIndex)
@@ -197,6 +213,47 @@ struct EditView: View {
         }
     }
 }
+
+struct ImagePreviewView: View {
+    let image: NSImage
+    
+    var body: some View {
+        VStack {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding()
+        }
+        .frame(minWidth: 400, minHeight: 400) // 设置最小窗口大小
+    }
+}
+
+
+class ImagePreviewWindowController: NSWindowController {
+    init(image: NSImage) {
+        let hostingView = NSHostingController(rootView: ImagePreviewView(image: image))
+        
+        let imageSize = image.size
+        let windowWidth = min(imageSize.width, 800)
+        let windowHeight = min(imageSize.height, 600)
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentViewController = hostingView
+        window.center()
+        super.init(window: window)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
 
 
 
