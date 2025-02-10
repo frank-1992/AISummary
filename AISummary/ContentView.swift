@@ -5,14 +5,11 @@
 //  Created by 吴熠 on 2025/2/10.
 //
 
+// sk-1bdaa5d2390d40999b43fe88fd618275
+
 import SwiftUI
 import Foundation
 import AppKit
-
-//class ImagePreviewModel: ObservableObject {
-//    @Published var previewImage: NSImage?
-//    @Published var isPreviewing: Bool = false
-//}
 
 struct ContentView: View {
     @State private var workLogs: [WorkLog] = WorkLogStorage.load()
@@ -114,18 +111,22 @@ struct ContentView: View {
     
     func generateWeeklyReport() {
         isGeneratingReport = true
-        
+
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
-        
-        let markdownReport = workLogs.map { log in
+
+        let reportContent = workLogs.map { log in
             "- \(dateFormatter.string(from: log.date)): \(log.content)"
         }.joined(separator: "\n")
-        
-        saveReportToFile(markdownReport)
-        
-        isGeneratingReport = false
+
+        generateReportWithAI(input: reportContent) { generatedText in
+            DispatchQueue.main.async {
+                saveReportToFile(generatedText)
+                isGeneratingReport = false
+            }
+        }
     }
+
     
     func saveReportToFile(_ report: String) {
         let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("weekly_report.md")
@@ -136,6 +137,90 @@ struct ContentView: View {
             print("Error saving report: \(error)")
         }
     }
+    
+    func generateReportWithAI(input: String, completion: @escaping (String) -> Void) {
+        let apiKey = "sk-1bdaa5d2390d40999b43fe88fd618275" // 请替换为真实API密钥
+        let endpoint = "https://api.deepseek.com/v1/chat/completions"
+        
+        // 构建系统提示词（控制输出格式）
+        let systemPrompt = """
+        你是一个专业的工作报告生成助手，请根据用户提供的工作日志内容，生成结构清晰、专业的Markdown格式报告。
+        要求包含以下章节：
+        # 本周工作概要
+        ## 重点工作进展
+        ## 任务完成情况
+        ## 遇到的问题与解决方案
+        ## 下周工作计划
+        
+        注意：
+        1. 使用中文撰写
+        2. 适当添加项目符号列表和分段
+        3. 对技术细节保持专业表述
+        4. 输出纯Markdown内容（不要包含额外说明）
+        """
+        
+        // 构建请求体
+        let requestBody: [String: Any] = [
+            "model": "deepseek-chat",
+            "messages": [
+                ["role": "system", "content": systemPrompt],
+                ["role": "user", "content": input]
+            ],
+            "temperature": 0.3,  // 降低随机性保证稳定性
+            "max_tokens": 2000    // 控制输出长度
+        ]
+        
+        // 创建URLRequest
+        guard let url = URL(string: endpoint),
+              let httpBody = try? JSONSerialization.data(withJSONObject: requestBody) else {
+            completion("请求配置错误")
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.httpBody = httpBody
+        
+        // 发起网络请求
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            // 错误处理
+            if let error = error {
+                completion("请求失败: \(error.localizedDescription)")
+                return
+            }
+            
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200...299).contains(httpResponse.statusCode) else {
+                completion("服务器返回错误: \((response as? HTTPURLResponse)?.statusCode ?? -1)")
+                return
+            }
+            
+            guard let data = data else {
+                completion("未收到有效响应")
+                return
+            }
+            
+            // 解析响应数据
+            do {
+                let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                if let choices = json?["choices"] as? [[String: Any]],
+                   let firstChoice = choices.first,
+                   let message = firstChoice["message"] as? [String: Any],
+                   let content = message["content"] as? String {
+                    DispatchQueue.main.async {
+                        completion(content)
+                    }
+                } else {
+                    completion("解析响应数据失败")
+                }
+            } catch {
+                completion("数据解析错误: \(error.localizedDescription)")
+            }
+        }.resume()
+    }
+
 }
 
 func showImagePreview(image: NSImage) {
