@@ -14,68 +14,92 @@ struct ContentView: View {
     @State private var isGeneratingReport = false
     @State private var isEditing = false
     @State private var editingIndex: Int = 0
-    @State private var tempLog: WorkLog = WorkLog(date: Date(), content: "")
+    @State private var tempLog: WorkLog = WorkLog(date: Date(), content: "", imageData: [])
     
     var body: some View {
-        VStack {
-            List {
-                ForEach(workLogs.indices, id: \ .self) { index in
-                    VStack(alignment: .leading) {
-                        Text(workLogs[index].dateFormatted)
-                            .font(.headline)
-                        Text(workLogs[index].content)
+            VStack {
+                List {
+                    ForEach(workLogs.indices, id: \ .self) { index in
+                        VStack(alignment: .leading) {
+                            Text(workLogs[index].dateFormatted)
+                                .font(.headline)
+                            Text(workLogs[index].content)
+                            
+                            ScrollView(.horizontal) {
+                                HStack {
+                                    ForEach(workLogs[index].imageData, id: \ .self) { imageData in
+                                        if let image = NSImage(data: imageData) {
+                                            Image(nsImage: image)
+                                                .resizable()
+                                                .scaledToFit()
+                                                .frame(height: 100)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        .padding()
+                        .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            startEditing(index: index)
+                        }
                     }
-                    .padding()
-                    .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading) // 让整个行的热区变大
-                    .contentShape(Rectangle()) // 让空白区域也可点击
-                    .onTapGesture {
-                        startEditing(index: index)
-                    }
-                }
-                .onDelete(perform: deleteLog)
-            }
-            
-            HStack {
-                Button("添加记录") {
-                    addNewLog()
+                    .onDelete(perform: deleteLog)
                 }
                 
-                Button("生成周报") {
-                    generateWeeklyReport()
+                HStack {
+                    Button("添加记录") {
+                        addNewLog()
+                    }
+                    
+                    Button("生成周报") {
+                        generateWeeklyReport()
+                    }
+                    .disabled(isGeneratingReport)
                 }
-                .disabled(isGeneratingReport)
+                .padding()
             }
-            .padding()
+            .sheet(isPresented: $isEditing) {
+                EditView(log: $tempLog, isEditing: $isEditing, onSave: {
+                    DispatchQueue.global(qos: .background).async {
+                        workLogs[editingIndex] = tempLog
+                        WorkLogStorage.save(workLogs)
+                        DispatchQueue.main.async {
+                            isEditing = false
+                        }
+                    }
+                })
+                .background(Color(NSColor.windowBackgroundColor))
+                .frame(width: 400, height: 400)
+            }
+            .frame(minWidth: 400, minHeight: 300)
+            .onDisappear {
+                DispatchQueue.global(qos: .background).async {
+                    WorkLogStorage.save(workLogs)
+                }
+            }
         }
-        .sheet(isPresented: $isEditing) {
-            EditView(log: $tempLog, isEditing: $isEditing, onSave: {
-                workLogs[editingIndex] = tempLog
-                WorkLogStorage.save(workLogs)
-            })
-            .background(Color(NSColor.windowBackgroundColor))
-            .frame(width: 400, height: 300)
-        }
-        .frame(minWidth: 400, minHeight: 300)
-        .onDisappear {
+    
+    func addNewLog() {
+        let newLog = WorkLog(date: Date(), content: "今天的工作内容", imageData: [])
+        DispatchQueue.global(qos: .background).async {
+            workLogs.append(newLog)
             WorkLogStorage.save(workLogs)
         }
     }
     
-    func addNewLog() {
-        let newLog = WorkLog(date: Date(), content: "今天的工作内容")
-        workLogs.append(newLog)
-        WorkLogStorage.save(workLogs)
-    }
-    
     func deleteLog(at offsets: IndexSet) {
-        workLogs.remove(atOffsets: offsets)
-        WorkLogStorage.save(workLogs)
+        DispatchQueue.global(qos: .background).async {
+            workLogs.remove(atOffsets: offsets)
+            WorkLogStorage.save(workLogs)
+        }
     }
     
     func startEditing(index: Int) {
         if index < workLogs.count {
             editingIndex = index
-            tempLog = workLogs[index] // 使用临时对象
+            tempLog = workLogs[index]
             isEditing = true
         }
     }
@@ -111,6 +135,8 @@ struct EditView: View {
     @Binding var isEditing: Bool
     var onSave: () -> Void
     
+    @State private var selectedImages: [NSImage] = []
+    
     var body: some View {
         VStack {
             TextEditor(text: $log.content)
@@ -119,8 +145,24 @@ struct EditView: View {
                 .border(Color.black, width: 1)
                 .background(Color(NSColor.textBackgroundColor))
             
+            ScrollView(.horizontal) {
+                HStack {
+                    ForEach(selectedImages, id: \ .self) { image in
+                        Image(nsImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(height: 100)
+                    }
+                }
+            }
+            
+            Button("选择图片") {
+                selectImages()
+            }
+            
             HStack {
                 Button("保存") {
+                    log.imageData = selectedImages.compactMap { $0.tiffRepresentation }
                     onSave()
                     isEditing = false
                 }
@@ -130,15 +172,28 @@ struct EditView: View {
             }
             .padding()
         }
-        .frame(width: 400, height: 300)
+        .frame(width: 400, height: 400)
         .background(Color(NSColor.windowBackgroundColor))
+        .onAppear {
+            selectedImages = log.imageData.compactMap { NSImage(data: $0) }
+        }
+    }
+    
+    func selectImages() {
+        let openPanel = NSOpenPanel()
+        openPanel.allowedContentTypes = [.image]
+        openPanel.allowsMultipleSelection = true
+        if openPanel.runModal() == .OK {
+            selectedImages = openPanel.urls.compactMap { NSImage(contentsOf: $0) }
+        }
     }
 }
 
 struct WorkLog: Identifiable, Codable {
     let id = UUID()
     let date: Date
-    var content: String = "wahahhahah"
+    var content: String
+    var imageData: [Data]
     
     var dateFormatted: String {
         let formatter = DateFormatter()
