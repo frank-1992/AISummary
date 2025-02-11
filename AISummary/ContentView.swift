@@ -47,11 +47,15 @@ struct ContentView: View {
                         .padding()
                         .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
                         .contentShape(Rectangle())
+                        .contextMenu {
+                            Button("删除", role: .destructive) {
+                                deleteLog(at: IndexSet(integer: index))
+                            }
+                        }
                         .onTapGesture {
                             startEditing(index: index)
                         }
                     }
-                    .onDelete(perform: deleteLog)
                 }
                 
                 HStack {
