@@ -9,109 +9,150 @@ import SwiftUI
 import Foundation
 import AppKit
 
+enum LogCategory: String, CaseIterable, Identifiable {
+    case daily = "日报记录"
+    case weekly = "周报记录"
+    case annual = "年度汇报"
+    
+    var id: String { self.rawValue }
+}
+
 struct ContentView: View {
     @State private var workLogs: [WorkLog] = WorkLogStorage.load()
+    @State private var selectedCategory: LogCategory = .daily
     @State private var isGeneratingReport = false
     @State private var isEditing = false
     @State private var editingIndex: Int = 0
     @State private var tempLog: WorkLog = WorkLog(date: Date(), content: "", imageData: [])
     
     var body: some View {
-        ZStack {
-            VStack {
-                List {
-                    ForEach(workLogs.indices, id: \ .self) { index in
-                        VStack(alignment: .leading) {
-                            Text(workLogs[index].dateFormatted)
-                                .font(.headline)
-                            Text(workLogs[index].content)
-                            
-                            ScrollView(.horizontal) {
-                                HStack(spacing: 10) {
-                                    ForEach(workLogs[index].imageData.indices, id: \ .self) { imgIndex in
-                                        if let image = NSImage(data: workLogs[index].imageData[imgIndex]) {
-                                            Image(nsImage: image)
-                                                .resizable()
-                                                .scaledToFit()
-                                                .frame(height: 100)
-                                                .onTapGesture {
-                                                    showImagePreview(image: image)
-                                                }
+        NavigationView {
+            // 左侧 Sidebar（侧边栏）
+            List(LogCategory.allCases, selection: $selectedCategory) { category in
+                Text(category.rawValue)
+                    .padding(.vertical, 10)
+                    .onTapGesture {
+                        selectedCategory = category  // 点击时更新选中的类别
+                    }
+            }
+            .frame(minWidth: 150)
+            .listStyle(SidebarListStyle()) // macOS风格的侧边栏
+            
+            
+            ZStack {
+                VStack {
+                    Text("当前选择: \(selectedCategory.rawValue)")
+                        .font(.title)
+                        .padding()
+                    
+                    List {
+                        ForEach(filteredLogs.indices, id: \ .self) { index in
+                            VStack(alignment: .leading) {
+                                Text(filteredLogs[index].dateFormatted)
+                                    .font(.headline)
+                                Text(filteredLogs[index].content)
+                                
+                                ScrollView(.horizontal) {
+                                    HStack(spacing: 10) {
+                                        ForEach(filteredLogs[index].imageData.indices, id: \ .self) { imgIndex in
+                                            if let image = NSImage(data: filteredLogs[index].imageData[imgIndex]) {
+                                                Image(nsImage: image)
+                                                    .resizable()
+                                                    .scaledToFit()
+                                                    .frame(height: 100)
+                                                    .onTapGesture {
+                                                        showImagePreview(image: image)
+                                                    }
+                                            }
                                         }
                                     }
+                                    .padding(.horizontal, 10)
                                 }
-                                .padding(.horizontal, 10)
                             }
-                        }
-                        .padding()
-                        .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .contextMenu {
-                            Button("删除", role: .destructive) {
-                                deleteLog(at: IndexSet(integer: index))
+                            .padding()
+                            .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
+                            .contentShape(Rectangle())
+                            .contextMenu {
+                                Button("删除", role: .destructive) {
+                                    deleteLog(at: IndexSet(integer: index))
+                                }
                             }
-                        }
-                        .onTapGesture {
-                            startEditing(index: index)
+                            .onTapGesture {
+                                startEditing(index: index)
+                            }
                         }
                     }
+                    
+                    HStack {
+                        Button("添加记录") {
+                            addNewLog()
+                        }
+                        Button(action: generateWeeklyReport) {
+                            HStack {
+                                if isGeneratingReport {
+                                    Text("生成中...")
+                                } else {
+                                    Text("生成周报")
+                                }
+                            }
+                        }
+                        .disabled(isGeneratingReport)
+                    }
+                    .padding()
                 }
-                
-                HStack {
-                    Button("添加记录") {
-                        addNewLog()
-                    }
-                    Button(action: generateWeeklyReport) {
-                        HStack {
-                            if isGeneratingReport {
-                                Text("生成中...")
-                            } else {
-                                Text("生成周报")
+                .sheet(isPresented: $isEditing) {
+                    EditView(log: $tempLog, isEditing: $isEditing, onSave: {
+                        DispatchQueue.global(qos: .background).async {
+                            workLogs[editingIndex] = tempLog
+                            WorkLogStorage.save(workLogs)
+                            DispatchQueue.main.async {
+                                isEditing = false
                             }
                         }
-                    }
-                    .disabled(isGeneratingReport)
+                    })
+                    .background(Color(NSColor.windowBackgroundColor))
+                    .frame(width: 400, height: 400)
                 }
-                .padding()
-            }
-            .sheet(isPresented: $isEditing) {
-                EditView(log: $tempLog, isEditing: $isEditing, onSave: {
+                .frame(minWidth: 400, minHeight: 300)
+                .onDisappear {
                     DispatchQueue.global(qos: .background).async {
-                        workLogs[editingIndex] = tempLog
                         WorkLogStorage.save(workLogs)
-                        DispatchQueue.main.async {
-                            isEditing = false
-                        }
                     }
-                })
-                .background(Color(NSColor.windowBackgroundColor))
-                .frame(width: 400, height: 400)
-            }
-            .frame(minWidth: 400, minHeight: 300)
-            .onDisappear {
-                DispatchQueue.global(qos: .background).async {
-                    WorkLogStorage.save(workLogs)
                 }
-            }
-            
-            // **全屏遮罩 + ProgressView**
-            if isGeneratingReport {
-                Color.black.opacity(0.4) // 半透明背景
-                    .edgesIgnoringSafeArea(.all)
                 
-                VStack {
-                    ProgressView()
-                        .scaleEffect(1.5) // 让加载动画稍大一点
-                    Text("生成中...")
-                        .foregroundColor(.white)
-                        .font(.headline)
+                // **全屏遮罩 + ProgressView**
+                if isGeneratingReport {
+                    Color.black.opacity(0.4) // 半透明背景
+                        .edgesIgnoringSafeArea(.all)
+                    
+                    VStack {
+                        ProgressView()
+                            .scaleEffect(1.5) // 让加载动画稍大一点
+                        Text("生成中...")
+                            .foregroundColor(.white)
+                            .font(.headline)
+                    }
+                    .frame(width: 150, height: 100)
+                    .background(Color.gray.opacity(0.8))
+                    .cornerRadius(10)
                 }
-                .frame(width: 150, height: 100)
-                .background(Color.gray.opacity(0.8))
-                .cornerRadius(10)
             }
         }
+        
     }
+    
+    // 根据选择的类别筛选日志
+    var filteredLogs: [WorkLog] {
+        switch selectedCategory {
+        case .daily:
+            return workLogs // 显示所有日志
+        case .weekly:
+            return workLogs.filter { Calendar.current.component(.weekday, from: $0.date) == 7 } // 示例：筛选周日的日志
+        case .annual:
+            return workLogs
+        }
+    }
+    
     func addNewLog() {
         let newLog = WorkLog(date: Date(), content: "今天的工作内容", imageData: [])
         DispatchQueue.global(qos: .background).async {
