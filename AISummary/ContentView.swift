@@ -5,8 +5,6 @@
 //  Created by 吴熠 on 2025/2/10.
 //
 
-// sk-1bdaa5d2390d40999b43fe88fd618275
-
 import SwiftUI
 import Foundation
 import AppKit
@@ -19,6 +17,7 @@ struct ContentView: View {
     @State private var tempLog: WorkLog = WorkLog(date: Date(), content: "", imageData: [])
     
     var body: some View {
+        ZStack {
             VStack {
                 List {
                     ForEach(workLogs.indices, id: \ .self) { index in
@@ -62,9 +61,14 @@ struct ContentView: View {
                     Button("添加记录") {
                         addNewLog()
                     }
-                    
-                    Button("生成周报") {
-                        generateWeeklyReport()
+                    Button(action: generateWeeklyReport) {
+                        HStack {
+                            if isGeneratingReport {
+                                Text("生成中...")
+                            } else {
+                                Text("生成周报")
+                            }
+                        }
                     }
                     .disabled(isGeneratingReport)
                 }
@@ -89,7 +93,25 @@ struct ContentView: View {
                     WorkLogStorage.save(workLogs)
                 }
             }
+            
+            // **全屏遮罩 + ProgressView**
+            if isGeneratingReport {
+                Color.black.opacity(0.4) // 半透明背景
+                    .edgesIgnoringSafeArea(.all)
+                
+                VStack {
+                    ProgressView()
+                        .scaleEffect(1.5) // 让加载动画稍大一点
+                    Text("生成中...")
+                        .foregroundColor(.white)
+                        .font(.headline)
+                }
+                .frame(width: 150, height: 100)
+                .background(Color.gray.opacity(0.8))
+                .cornerRadius(10)
+            }
         }
+    }
     func addNewLog() {
         let newLog = WorkLog(date: Date(), content: "今天的工作内容", imageData: [])
         DispatchQueue.global(qos: .background).async {
@@ -115,14 +137,14 @@ struct ContentView: View {
     
     func generateWeeklyReport() {
         isGeneratingReport = true
-
+        
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
-
+        
         let reportContent = workLogs.map { log in
-            "- \(dateFormatter.string(from: log.date)): \(log.content)"
+            "\(dateFormatter.string(from: log.date)): \(log.content)"
         }.joined(separator: "\n")
-
+        
         generateReportWithAI(input: reportContent) { generatedText in
             DispatchQueue.main.async {
                 saveReportToFile(generatedText)
@@ -130,7 +152,7 @@ struct ContentView: View {
             }
         }
     }
-
+    
     
     func saveReportToFile(_ report: String) {
         let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("weekly_report.md")
@@ -143,88 +165,110 @@ struct ContentView: View {
     }
     
     func generateReportWithAI(input: String, completion: @escaping (String) -> Void) {
-        let apiKey = "sk-1bdaa5d2390d40999b43fe88fd618275" // 请替换为真实API密钥
-        let endpoint = "https://api.deepseek.com/v1/chat/completions"
-        
+        guard let url = URL(string: "http://localhost:11434/v1/chat/completions") else {
+            completion("URL 无效")
+            return
+        }
+
+        let cleanedInput = input.replacingOccurrences(of: "\n", with: " ")  // 移除换行，防止 JSON 解析错误
+
         // 构建系统提示词（控制输出格式）
         let systemPrompt = """
-        你是一个专业的工作报告生成助手，请根据用户提供的工作日志内容，生成结构清晰、专业的Markdown格式报告。
+        你是一个专业的工作报告生成助手，请根据用户提供的工作日志内容，生成结构清晰、专业的 Markdown 格式周报。
+        
         要求包含以下章节：
-        # 本周工作概要
-        ## 重点工作进展
-        ## 任务完成情况
-        ## 遇到的问题与解决方案
+        # 程序开发工程师周报
+        
+        ## 本周工作内容
+        - **[任务1]**: 详细描述任务内容和进展
+        - **[任务2]**: 详细描述任务内容和进展
+        - **[代码优化]**: 具体优化内容（如性能提升、Bug 修复等）
+        
+        ## 遇到的问题和解决方案
+        - **问题 1**: 描述遇到的问题
+          - **分析**: 可能的原因分析
+          - **解决方案**: 采取的措施及最终结果
+        - **问题 2**: 描述遇到的问题
+          - **分析**: 可能的原因分析
+          - **解决方案**: 采取的措施及最终结果
+        
+        ## OKR 进展
+        | 目标 | 进度 | 备注 |
+        |------|------|------|
+        | **[目标 1]** | 50% | 已完成部分任务，剩余部分计划下周推进 |
+        | **[目标 2]** | 80% | 进入优化阶段 |
+        
         ## 下周工作计划
+        - **[计划任务 1]**: 预计完成的任务及关键目标
+        - **[计划任务 2]**: 预计完成的任务及关键目标
+        - **[技术研究]**: 计划学习或攻克的技术难点
+        
+        ## 本周思考
+        - [思考点 1]: 反思本周工作中遇到的问题或收获
+        - [思考点 2]: 未来可能的优化方向或新思路
         
         注意：
         1. 使用中文撰写
-        2. 适当添加项目符号列表和分段
-        3. 对技术细节保持专业表述
-        4. 输出纯Markdown内容（不要包含额外说明）
+        2. 根据日志内容合理归类到不同章节
+        3. 适当优化表达，使其更具可读性
+        4. 输出纯 Markdown 内容（不要包含额外说明）
         """
+
         
-        // 构建请求体
         let requestBody: [String: Any] = [
-            "model": "deepseek-chat",
+            "model": "deepseek-r1:8b",
             "messages": [
                 ["role": "system", "content": systemPrompt],
-                ["role": "user", "content": input]
+                ["role": "user", "content": cleanedInput]
             ],
-            "temperature": 0.3,  // 降低随机性保证稳定性
-            "max_tokens": 2000    // 控制输出长度
+            "max_tokens": 5000
         ]
-        
-        // 创建URLRequest
-        guard let url = URL(string: endpoint),
-              let httpBody = try? JSONSerialization.data(withJSONObject: requestBody) else {
-            completion("请求配置错误")
-            return
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.httpBody = httpBody
-        
-        // 发起网络请求
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            // 错误处理
-            if let error = error {
-                completion("请求失败: \(error.localizedDescription)")
-                return
-            }
+
+        do {
+            let jsonData = try JSONSerialization.data(withJSONObject: requestBody)
             
-            guard let httpResponse = response as? HTTPURLResponse,
-                  (200...299).contains(httpResponse.statusCode) else {
-                completion("服务器返回错误: \((response as? HTTPURLResponse)?.statusCode ?? -1)")
-                return
-            }
-            
-            guard let data = data else {
-                completion("未收到有效响应")
-                return
-            }
-            
-            // 解析响应数据
-            do {
-                let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-                if let choices = json?["choices"] as? [[String: Any]],
+            var request = URLRequest(url: url, timeoutInterval: 120)  // 增加超时时间
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = jsonData
+
+            URLSession.shared.dataTask(with: request) { data, response, error in
+                if let error = error {
+                    DispatchQueue.main.async {
+                        completion("请求失败: \(error.localizedDescription)")
+                    }
+                    return
+                }
+
+                guard let data = data else {
+                    DispatchQueue.main.async {
+                        completion("返回数据为空")
+                    }
+                    return
+                }
+
+                if let jsonResponse = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
+                   let choices = jsonResponse["choices"] as? [[String: Any]],
                    let firstChoice = choices.first,
                    let message = firstChoice["message"] as? [String: Any],
                    let content = message["content"] as? String {
                     DispatchQueue.main.async {
-                        completion(content)
+                        let regexPattern = "\\s*<think>[\\s\\S]*?</think>\\s*"  // 确保删除前后可能存在的空白字符和换行
+                        let filteredOutput = content.replacingOccurrences(of: regexPattern, with: "", options: [.regularExpression])
+                            .trimmingCharacters(in: .whitespacesAndNewlines) // 移除头尾的空行
+                        completion(filteredOutput)
                     }
                 } else {
-                    completion("解析响应数据失败")
+                    DispatchQueue.main.async {
+                        completion("解析 AI 响应失败")
+                    }
                 }
-            } catch {
-                completion("数据解析错误: \(error.localizedDescription)")
-            }
-        }.resume()
-    }
+            }.resume()
 
+        } catch {
+            completion("JSON 序列化失败: \(error.localizedDescription)")
+        }
+    }
 }
 
 func showImagePreview(image: NSImage) {
@@ -326,7 +370,7 @@ class ImagePreviewWindowController: NSWindowController {
         let imageSize = image.size
         let windowWidth = min(imageSize.width, 800)
         let windowHeight = min(imageSize.height, 600)
-
+        
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight),
             styleMask: [.titled, .closable, .resizable],
@@ -341,7 +385,7 @@ class ImagePreviewWindowController: NSWindowController {
         window.level = .normal
         super.init(window: window)
     }
-
+    
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
