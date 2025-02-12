@@ -29,11 +29,32 @@ struct ContentView: View {
         NavigationView {
             // 左侧 Sidebar（侧边栏）
             List(LogCategory.allCases, selection: $selectedCategory) { category in
-                Text(category.rawValue)
-                    .padding(.vertical, 10)
-                    .onTapGesture {
-                        selectedCategory = category  // 点击时更新选中的类别
+                Spacer()
+                Label {
+                    Text(category.rawValue)
+                        .padding(.vertical, 5)
+                        .onTapGesture {
+                            selectedCategory = category
+                        }
+                } icon: {
+                    switch category {
+                    case .daily:
+                        Image("day")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 16, height: 16)
+                    case .weekly:
+                        Image("week")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 16, height: 16)
+                    case .annual:
+                        Image("year")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 16, height: 16)
                     }
+                }
             }
             .frame(minWidth: 150)
             .listStyle(SidebarListStyle()) // macOS风格的侧边栏
@@ -41,7 +62,7 @@ struct ContentView: View {
             
             ZStack {
                 VStack {
-                    Text("当前选择: \(selectedCategory.rawValue)")
+                    Text("\(selectedCategory.rawValue)")
                         .font(.title)
                         .padding()
                     
@@ -215,46 +236,41 @@ struct ContentView: View {
 
         // 构建系统提示词（控制输出格式）
         let systemPrompt = """
-        你是一个专业的工作报告生成助手，请根据用户提供的工作日志内容，生成结构清晰、专业的 Markdown 格式周报。
-        
-        要求包含以下章节：
-        # 程序开发工程师周报
-        
-        ## 本周工作内容
-        - **[任务1]**: 详细描述任务内容和进展
-        - **[任务2]**: 详细描述任务内容和进展
-        - **[代码优化]**: 具体优化内容（如性能提升、Bug 修复等）
-        
-        ## 遇到的问题和解决方案
-        - **问题 1**: 描述遇到的问题
-          - **分析**: 可能的原因分析
-          - **解决方案**: 采取的措施及最终结果
-        - **问题 2**: 描述遇到的问题
-          - **分析**: 可能的原因分析
-          - **解决方案**: 采取的措施及最终结果
-        
-        ## OKR 进展
+        你是一名专业的工作报告生成助手，请根据用户提供的工作日志内容，生成结构清晰、专业的 **Markdown 格式周报**。
+
+        ## **周报结构**
+
+        ### **# 程序开发工程师周报**
+
+        ## **本周工作内容**
+        - **[任务1]**: 详细描述任务内容和进展。
+        - **[任务2]**: 详细描述任务内容和进展。
+        - **[代码优化]**: 具体优化内容（如性能提升、Bug 修复等）。
+
+        ## **遇到的问题和解决方案**
+        - **问题 1**: 描述遇到的问题。
+          - **分析**: 可能的原因分析。
+          - **解决方案**: 采取的措施及最终结果。
+        - **问题 2**: 描述遇到的问题。
+          - **分析**: 可能的原因分析。
+          - **解决方案**: 采取的措施及最终结果。
+
+        ## **OKR 进展**
         | 目标 | 进度 | 备注 |
         |------|------|------|
         | **[目标 1]** | 50% | 已完成部分任务，剩余部分计划下周推进 |
         | **[目标 2]** | 80% | 进入优化阶段 |
-        
-        ## 下周工作计划
-        - **[计划任务 1]**: 预计完成的任务及关键目标
-        - **[计划任务 2]**: 预计完成的任务及关键目标
-        - **[技术研究]**: 计划学习或攻克的技术难点
-        
-        ## 本周思考
-        - [思考点 1]: 反思本周工作中遇到的问题或收获
-        - [思考点 2]: 未来可能的优化方向或新思路
-        
-        注意：
-        1. 使用中文撰写
-        2. 根据日志内容合理归类到不同章节
-        3. 适当优化表达，使其更具可读性
-        4. 输出纯 Markdown 内容（不要包含额外说明）
-        """
 
+        ## **下周工作计划**
+        - **[计划任务 1]**: 预计完成的任务及关键目标。
+        - **[计划任务 2]**: 预计完成的任务及关键目标。
+        - **[技术研究]**: 计划学习或攻克的技术难点。
+
+        ## **本周思考**
+        - **[思考点 1]**: 反思本周工作中遇到的问题或收获。
+        - **[思考点 2]**: 未来可能的优化方向或新思路。
+
+        """
         
         let requestBody: [String: Any] = [
             "model": "deepseek-r1:8b",
