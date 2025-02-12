@@ -9,7 +9,7 @@ import SwiftUI
 import Foundation
 import AppKit
 
-enum LogCategory: String, CaseIterable, Identifiable {
+enum LogCategory: String, CaseIterable, Identifiable, Codable {
     case daily = "日报记录"
     case weekly = "周报记录"
     case annual = "年度汇报"
@@ -23,7 +23,7 @@ struct ContentView: View {
     @State private var isGeneratingReport = false
     @State private var isEditing = false
     @State private var editingIndex: Int = 0
-    @State private var tempLog: WorkLog = WorkLog(date: Date(), content: "", imageData: [])
+    @State private var tempLog: WorkLog = WorkLog(date: Date(), content: "", imageData: [], category: .daily)
     
     var body: some View {
         NavigationView {
@@ -59,7 +59,6 @@ struct ContentView: View {
             .frame(minWidth: 150)
             .listStyle(SidebarListStyle()) // macOS风格的侧边栏
             
-            
             ZStack {
                 VStack {
                     Text("\(selectedCategory.rawValue)")
@@ -68,38 +67,57 @@ struct ContentView: View {
                     
                     List {
                         ForEach(filteredLogs.indices, id: \ .self) { index in
-                            VStack(alignment: .leading) {
-                                Text(filteredLogs[index].dateFormatted)
-                                    .font(.headline)
-                                Text(filteredLogs[index].content)
-                                
-                                ScrollView(.horizontal) {
-                                    HStack(spacing: 10) {
-                                        ForEach(filteredLogs[index].imageData.indices, id: \ .self) { imgIndex in
-                                            if let image = NSImage(data: filteredLogs[index].imageData[imgIndex]) {
-                                                Image(nsImage: image)
-                                                    .resizable()
-                                                    .scaledToFit()
-                                                    .frame(height: 100)
-                                                    .onTapGesture {
-                                                        showImagePreview(image: image)
-                                                    }
+                            ZStack(alignment: .topTrailing) {
+                                VStack(alignment: .leading) {
+                                    Text(filteredLogs[index].dateFormatted)
+                                        .font(.headline)
+                                    Text(filteredLogs[index].content)
+                                    
+                                    ScrollView(.horizontal) {
+                                        HStack(spacing: 10) {
+                                            ForEach(filteredLogs[index].imageData.indices, id: \ .self) { imgIndex in
+                                                if let image = NSImage(data: filteredLogs[index].imageData[imgIndex]) {
+                                                    Image(nsImage: image)
+                                                        .resizable()
+                                                        .scaledToFit()
+                                                        .frame(height: 100)
+                                                        .onTapGesture {
+                                                            showImagePreview(image: image)
+                                                        }
+                                                }
                                             }
                                         }
+                                        .padding(.horizontal, 10)
                                     }
-                                    .padding(.horizontal, 10)
                                 }
-                            }
-                            .padding()
-                            .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
-                            .contentShape(Rectangle())
-                            .contextMenu {
-                                Button("删除", role: .destructive) {
-                                    deleteLog(at: IndexSet(integer: index))
+                                .padding()
+                                .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
+                                .contentShape(Rectangle())
+                                .contextMenu {
+                                    Button("删除", role: .destructive) {
+                                        deleteLog(at: index)
+                                    }
                                 }
-                            }
-                            .onTapGesture {
-                                startEditing(index: index)
+                                .onTapGesture {
+                                    startEditing(index: index)
+                                }
+                                
+                                // **仅在周报或年度汇报时显示导出按钮，并放在右上角**
+                                if selectedCategory == .weekly || selectedCategory == .annual {
+                                    Button(action: {
+                                        saveReportToFile(filteredLogs[index])
+                                    }) {
+                                        Image(systemName: "square.and.arrow.up")
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(width: 20, height: 20)
+                                            .padding(8)
+                                            .background(Color.gray.opacity(0.2))
+                                            .clipShape(Circle())
+                                    }
+                                    .buttonStyle(BorderlessButtonStyle()) // 避免影响 List 点击
+                                    .padding()
+                                }
                             }
                         }
                     }
@@ -122,17 +140,19 @@ struct ContentView: View {
                     .padding()
                 }
                 .sheet(isPresented: $isEditing) {
-                    EditView(log: $tempLog, isEditing: $isEditing, onSave: {
+                    EditView(log: $tempLog, isEditing: $isEditing, onSave: { id in
                         DispatchQueue.global(qos: .background).async {
-                            workLogs[editingIndex] = tempLog
-                            WorkLogStorage.save(workLogs)
-                            DispatchQueue.main.async {
-                                isEditing = false
+                            if let index = workLogs.firstIndex(where: { $0.id == id }) {
+                                workLogs[index] = tempLog
+                                WorkLogStorage.save(workLogs)
+                                DispatchQueue.main.async {
+                                    isEditing = false
+                                }
                             }
                         }
                     })
                     .background(Color(NSColor.windowBackgroundColor))
-                    .frame(width: 400, height: 400)
+                    .frame(width: 600, height: 600)
                 }
                 .frame(minWidth: 400, minHeight: 300)
                 .onDisappear {
@@ -159,40 +179,43 @@ struct ContentView: View {
                 }
             }
         }
-        
     }
     
     // 根据选择的类别筛选日志
     var filteredLogs: [WorkLog] {
         switch selectedCategory {
         case .daily:
-            return workLogs // 显示所有日志
+            return workLogs.filter { $0.category == .daily } // 显示所有日志
         case .weekly:
-            return workLogs.filter { Calendar.current.component(.weekday, from: $0.date) == 7 } // 示例：筛选周日的日志
+            return workLogs.filter { $0.category == .weekly } // 示例：筛选周日的日志
         case .annual:
             return workLogs
         }
     }
     
     func addNewLog() {
-        let newLog = WorkLog(date: Date(), content: "今天的工作内容", imageData: [])
+        selectedCategory = .daily
+        let newLog = WorkLog(date: Date(), content: "今天的工作内容", imageData: [], category: .daily)
         DispatchQueue.global(qos: .background).async {
             workLogs.append(newLog)
             WorkLogStorage.save(workLogs)
         }
     }
     
-    func deleteLog(at offsets: IndexSet) {
+    func deleteLog(at index: Int) {
         DispatchQueue.global(qos: .background).async {
-            workLogs.remove(atOffsets: offsets)
-            WorkLogStorage.save(workLogs)
+            let currentLog = filteredLogs[index]
+            if let currentIndex = workLogs.firstIndex(where: { $0.id == currentLog.id }) {
+                workLogs.remove(at: currentIndex)
+                WorkLogStorage.save(workLogs)
+            }
         }
     }
     
     func startEditing(index: Int) {
-        if index < workLogs.count {
+        if index < filteredLogs.count {
             editingIndex = index
-            tempLog = workLogs[index]
+            tempLog = filteredLogs[index]
             isEditing = true
         }
     }
@@ -203,21 +226,34 @@ struct ContentView: View {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
         
-        let reportContent = workLogs.map { log in
+        let dailyWorklogs = workLogs.filter({ $0.category == .daily })
+        let reportContent = dailyWorklogs.map { log in
             "\(dateFormatter.string(from: log.date)): \(log.content)"
         }.joined(separator: "\n")
         
         generateReportWithAI(input: reportContent) { generatedText in
             DispatchQueue.main.async {
-                saveReportToFile(generatedText)
+                let weeklyLog = WorkLog(date: Date(), content: generatedText, imageData: [], category: .weekly)
+                workLogs.append(weeklyLog)  // 存储周报
+                WorkLogStorage.save(workLogs)  // 保存数据
+                selectedCategory = .weekly  // 切换到周报视图
                 isGeneratingReport = false
             }
         }
     }
     
-    
-    func saveReportToFile(_ report: String) {
-        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("weekly_report.md")
+    func saveReportToFile(_ worklog: WorkLog) {
+        let report = worklog.content
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let reportDate = dateFormatter.string(from: worklog.date)
+        var name = ""
+        if selectedCategory == .weekly {
+            name = "\(reportDate)_weekly_report.md"
+        } else {
+            name = "\(reportDate)_annual_report.md"
+        }
+        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(name)
         do {
             try report.write(to: fileURL, atomically: true, encoding: .utf8)
             NSWorkspace.shared.activateFileViewerSelecting([fileURL])
@@ -245,7 +281,6 @@ struct ContentView: View {
         ## **本周工作内容**
         - **[任务1]**: 详细描述任务内容和进展。
         - **[任务2]**: 详细描述任务内容和进展。
-        - **[代码优化]**: 具体优化内容（如性能提升、Bug 修复等）。
 
         ## **遇到的问题和解决方案**
         - **问题 1**: 描述遇到的问题。
@@ -312,6 +347,8 @@ struct ContentView: View {
                     DispatchQueue.main.async {
                         let regexPattern = "\\s*<think>[\\s\\S]*?</think>\\s*"  // 确保删除前后可能存在的空白字符和换行
                         let filteredOutput = content.replacingOccurrences(of: regexPattern, with: "", options: [.regularExpression])
+                            .replacingOccurrences(of: "```markdown", with: "") // 移除 ```markdown
+                            .replacingOccurrences(of: "```", with: "")         // 移除 ```
                             .trimmingCharacters(in: .whitespacesAndNewlines) // 移除头尾的空行
                         completion(filteredOutput)
                     }
@@ -336,7 +373,7 @@ func showImagePreview(image: NSImage) {
 struct EditView: View {
     @Binding var log: WorkLog
     @Binding var isEditing: Bool
-    var onSave: () -> Void
+    var onSave: (String) -> Void
     
     var body: some View {
         VStack {
@@ -380,7 +417,7 @@ struct EditView: View {
             
             HStack {
                 Button("保存") {
-                    onSave()
+                    onSave(log.id)
                     isEditing = false
                 }
                 Button("取消") {
@@ -389,7 +426,7 @@ struct EditView: View {
             }
             .padding()
         }
-        .frame(width: 400, height: 400)
+        .frame(width: 600, height: 600)
         .background(Color(NSColor.windowBackgroundColor))
     }
     
@@ -452,10 +489,11 @@ class ImagePreviewWindowController: NSWindowController {
 
 
 struct WorkLog: Identifiable, Codable {
-    let id = UUID()
+    var id = UUID().uuidString
     let date: Date
     var content: String
     var imageData: [Data]
+    var category: LogCategory
     
     var dateFormatted: String {
         let formatter = DateFormatter()
